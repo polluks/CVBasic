@@ -1,0 +1,12 @@
+CLS
+FOR i=0 TO 7
+  PRINT "HELLO C64!"
+NEXT i
+BORDER 1
+WAIT
+BORDER 0
+GOTO start
+
+start:
+CLS
+PRINT "DONE!"

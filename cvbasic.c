@@ -108,6 +108,9 @@ struct console consoles[TOTAL_TARGETS] = {
     {"msx2",    "-ram16",   "MSX2 (8K RAM), use -ram16 for 16K of RAM,\n        use -konami for Konami mapper instead of ASCII16",
         "MSX2",
         0xe000, 0xf380, 0x1380,  0x98,   0x98, 0,    1, CPU_Z80},
+    {"c64",     "",         "Commodore 64 (64K RAM)",
+        "Commodore 64",
+        0x0900, 0x01ff, 0x9000,  0,      0,    0,    1, CPU_6502},
 };
 
 static int err_code;
@@ -1467,7 +1470,7 @@ struct node *evaluate_level_7(int *type)
             }
             get_lex();
             *type = TYPE_8;
-            if (machine == CREATIVISION || machine == TI994A || machine == NES)
+            if (machine == CREATIVISION || machine == TI994A || machine == NES || machine == C64)
                 emit_warning("Ignoring INP (not supported in this platform)");
             return tree;
         }
@@ -1490,7 +1493,7 @@ struct node *evaluate_level_7(int *type)
         }
         if (strcmp(name, "VPEEK") == 0) {
             if (machine == NES)
-                emit_error("VPEEK cannot be used in NES/Famicom");
+                emit_error("VPEEK cannot be used in NES/Famicom or C64");
             get_lex();
             if (lex != C_LPAREN) {
                 emit_error("missing left parenthesis in VPEEK");
@@ -3767,6 +3770,16 @@ void compile_statement(int check_for_else)
                         cpu6502_noop("TAX");
                         cpu6502_1op("LDA", "temp");
                         cpu6502_1op("JSR", "WRTVRM");
+                    } else if (machine == C64) {
+                        node_generate(value, 0);
+                        cpu6502_noop("PHA");
+                        node_generate(address, 0);
+                        cpu6502_1op("STA", "temp");
+                        cpu6502_1op("STY", "temp+1");
+                        cpu6502_1op("JSR", "vram_translate");
+                        cpu6502_noop("PLA");
+                        cpu6502_1op("LDY", "#0");
+                        cpu6502_1op("STA", "(temp),Y");
                     } else {
                         node_generate(value, 0);
                         cpu6502_noop("PHA");
@@ -3814,7 +3827,7 @@ void compile_statement(int check_for_else)
                 generic_call("cls");
             } else if (strcmp(name, "WAIT") == 0) {
                 get_lex();
-                if (machine == SORD || machine == CREATIVISION || machine == NES || machine == EINSTEIN || machine == TI994A)
+                if (machine == SORD || machine == CREATIVISION || machine == NES || machine == EINSTEIN || machine == TI994A || machine == C64)
                     generic_call("wait");
                 else
                     cpuz80_noop("HALT");
@@ -4157,7 +4170,7 @@ void compile_statement(int check_for_else)
                 
                 get_lex();
                 if (machine == NES) {
-                    emit_error("DEFINE isn't implemented for NES");
+                    emit_error("DEFINE isn't implemented for NES/C64");
                     break;
                 }
                 if (lex != C_NAME) {
@@ -4817,17 +4830,35 @@ void compile_statement(int check_for_else)
                         bitmap_byte++;
                         if (bitmap_byte >= 16) {
                             bitmap_byte = 0;
-                            for (c = 0; c < 32; c += 8) {
-                                if (target == CPU_9900) {
-                                    sprintf(temp, "\tbyte >%02x,>%02x,>%02x,>%02x,>%02x,>%02x,>%02x,>%02x\n",
-                                            bitmap[c], bitmap[c + 1], bitmap[c + 2], bitmap[c + 3],
-                                            bitmap[c + 4], bitmap[c + 5], bitmap[c + 6], bitmap[c + 7]);
-                                } else {
-                                    sprintf(temp, "\tDB $%02x,$%02x,$%02x,$%02x,$%02x,$%02x,$%02x,$%02x\n",
-                                            bitmap[c], bitmap[c + 1], bitmap[c + 2], bitmap[c + 3],
-                                            bitmap[c + 4], bitmap[c + 5], bitmap[c + 6], bitmap[c + 7]);
+                            c = 0;
+                            if (machine == C64) {
+                                int pp;
+                                for (pp = 0; pp < 2; pp++)
+                                    fprintf(output, "\tDB $00,$00,$00\n");
+                                for (pp = 0; pp < 16; pp++) {
+                                    unsigned char h = bitmap[pp];
+                                    unsigned char l = bitmap[pp + 16];
+                                    fprintf(output, "\tDB $%02x,$%02x,$%02x\n",
+                                            (h & 0xf0) >> 4,
+                                            ((h & 0x0f) << 4) | ((l & 0xf0) >> 4),
+                                            (l & 0x0f) << 4);
                                 }
-                                fprintf(output, "%s", temp);
+                                for (pp = 0; pp < 3; pp++)
+                                    fprintf(output, "\tDB $00,$00,$00\n");
+                                fprintf(output, "\tDB $00\n");
+                            } else {
+                                for (c = 0; c < 32; c += 8) {
+                                    if (target == CPU_9900) {
+                                        sprintf(temp, "\tbyte >%02x,>%02x,>%02x,>%02x,>%02x,>%02x,>%02x,>%02x\n",
+                                                bitmap[c], bitmap[c + 1], bitmap[c + 2], bitmap[c + 3],
+                                                bitmap[c + 4], bitmap[c + 5], bitmap[c + 6], bitmap[c + 7]);
+                                    } else {
+                                        sprintf(temp, "\tDB $%02x,$%02x,$%02x,$%02x,$%02x,$%02x,$%02x,$%02x\n",
+                                                bitmap[c], bitmap[c + 1], bitmap[c + 2], bitmap[c + 3],
+                                                bitmap[c + 4], bitmap[c + 5], bitmap[c + 6], bitmap[c + 7]);
+                                    }
+                                    fprintf(output, "%s", temp);
+                                }
                             }
                         }
                     }
@@ -4934,6 +4965,8 @@ void compile_statement(int check_for_else)
                     if (target == CPU_6502) {
                         if (machine == NES) {
                             emit_warning("BORDER first argument ignored for NES/Famicom (use PALETTE 0)");
+                        } else if (machine == C64) {
+                            cpu6502_1op("STA", "$D020");
                         } else {
                             cpu6502_1op("LDX", "#7");
                             generic_interrupt_disable();
@@ -4959,8 +4992,10 @@ void compile_statement(int check_for_else)
                 if (lex == C_COMMA) {
                     get_lex();
                     type = evaluate_expression(1, TYPE_8, 0);
-                    if (machine != SMS && machine != NES && machine != MSX2) {
+                    if (machine != SMS && machine != NES && machine != MSX2 && machine != C64) {
                         emit_error("The 2nd BORDER argument only available for MSX2/SMS/NES/Famicom");
+                    } else if (machine == C64) {
+                        cpu6502_1op("STA", "$D020");
                     } else if (machine == SMS) {
                         cpuz80_1op("AND", "$07");
                         cpuz80_1op("OR", "$20");
@@ -4995,8 +5030,10 @@ void compile_statement(int check_for_else)
                 int type;
                 
                 get_lex();
-                if (machine != SMS && machine != NES && machine != MSX2)
+                if (machine != SMS && machine != NES && machine != MSX2 && machine != C64)
                     emit_error("SCROLL is only available for MSX2/SMS/NES/Famicom");
+                if (machine == C64)
+                    emit_error("SCROLL is not available for C64");
                 if (lex != C_COMMA) {
                     if (machine == SMS) {
                         type = evaluate_expression(1, TYPE_8, 0);
@@ -5051,13 +5088,18 @@ void compile_statement(int check_for_else)
                         cpu6502_1op("STY", "scroll_y+1");
                     }
                 }
-            } else if (strcmp(name, "PALETTE") == 0) {  /* Sega Master System / NES / MSX2 */
+            } else if (strcmp(name, "PALETTE") == 0) {  /* Sega Master System / NES / MSX2 / C64 */
                 int type;
                 struct node *source;
                 
                 get_lex();
-                if (machine != SMS && machine != NES && machine != MSX2)
-                    emit_error("PALETTE is only available on SMS/NES/Famicom/MSX2");
+                if (machine != SMS && machine != NES && machine != MSX2 && machine != C64)
+                    emit_error("PALETTE is only available on SMS/NES/Famicom/MSX2/C64");
+                if (machine == C64 && lex == C_NAME && strcmp(name, "LOAD") == 0) {
+                    emit_error("PALETTE LOAD is not available for C64");
+                    get_lex();
+                    break;
+                }
                 if (lex == C_NAME && strcmp(name, "LOAD") == 0) {
                     get_lex();
                     if (lex != C_NAME) {
@@ -5112,6 +5154,10 @@ void compile_statement(int check_for_else)
                         cpuz80_2op("LD", "B", "A");
                         cpuz80_2op("LD", "C", "$10");
                         cpuz80_1op("CALL", "WRTVDP");
+                    } else if (machine == C64) {
+                        if (target == CPU_6502) {
+                            cpu6502_noop("PHA");
+                        }
                     }
                     if (lex != C_COMMA)
                         emit_error("missing comma in PALETTE");
@@ -5134,6 +5180,15 @@ void compile_statement(int check_for_else)
                         cpuz80_2op("LD", "A", "H");
                         cpuz80_2op("OUT", "(VDP+2)", "A");
                         generic_interrupt_enable();
+                    } else if (machine == C64) {
+                        if (target == CPU_6502) {
+                            cpu6502_1op("AND", "#$0f");
+                            cpu6502_noop("TAY");
+                            cpu6502_noop("PLA");
+                            cpu6502_noop("TAX");
+                            cpu6502_noop("TYA");
+                            cpu6502_1op("STA", "$D020,X");
+                        }
                     }
                 }
             } else if (strcmp(name, "NAMETABLE") == 0) {    /* Select nametable arrangement */
@@ -5141,8 +5196,10 @@ void compile_statement(int check_for_else)
                 struct node *tree;
                 int c;
                 
-                if (machine != NES)
+                if (machine != NES && machine != C64)
                     emit_error("CHRRAM is only allowed for NES/Famicom");
+                if (machine == C64)
+                    emit_error("NAMETABLE not available for C64");
                 else if (bank_switching == 0)
                     emit_error("It is required a BANK ROM sentence to enable CHRRAM");
                 get_lex();
@@ -5162,8 +5219,10 @@ void compile_statement(int check_for_else)
                 struct node *tree;
                 int c;
                 
-                if (machine != NES)
+                if (machine != NES && machine != C64)
                     emit_error("CHRRAM is only allowed for NES/Famicom");
+                if (machine == C64)
+                    emit_error("CHRRAM not available for C64");
                 else if (bank_switching == 0)
                     emit_error("It is required a BANK ROM sentence to enable CHRRAM");
                 get_lex();
@@ -5186,8 +5245,10 @@ void compile_statement(int check_for_else)
                 struct node *tree;
                 int c;
                 
-                if (machine != NES)
+                if (machine != NES && machine != C64)
                     emit_error("CHRROM is only allowed for NES/Famicom");
+                if (machine == C64)
+                    emit_error("CHRROM not available for C64");
                 get_lex();
                 if (lex != C_NAME || strcmp(name, "PATTERN") != 0) {
                     tree = evaluate_level_0(&type);
@@ -5446,6 +5507,24 @@ void compile_statement(int check_for_else)
                                 cpu6502_1op("STA", "pointer");
                                 cpu6502_1op("STY", "pointer+1");
                                 cpu6502_1op("JSR", "LDIRVM4");
+                            } else if (machine == C64) {
+                                sprintf(temp, "#%s", assigned);
+                                cpu6502_1op("LDA", temp);
+                                strcat(temp, ">>8");
+                                cpu6502_1op("LDY", temp);
+                                cpu6502_1op("STA", "temp");
+                                cpu6502_1op("STY", "temp+1");
+                                cpu6502_1op("LDA", "#$00");
+                                cpu6502_1op("LDY", "#$04");
+                                cpu6502_1op("STA", "temp2");
+                                cpu6502_1op("STY", "temp2+1");
+                                cpu6502_1op("LDA", "#$00");
+                                cpu6502_1op("LDY", "#$04");
+                                cpu6502_1op("STA", "pointer");
+                                cpu6502_1op("STY", "pointer+1");
+                                generic_interrupt_disable();
+                                cpu6502_1op("JSR", "LDIRVM");
+                                generic_interrupt_enable();
                             } else {
                                 sprintf(temp, "#%s", assigned);
                                 cpu6502_1op("LDA", temp);
@@ -6144,6 +6223,106 @@ void compile_statement(int check_for_else)
                                 cpu6502_1op("STA", "$4015");
                             }
                             break;
+                        /* Sound handling for C64 SID */
+                        case 16:
+                            get_lex();
+                            if (lex != C_COMMA) {
+                                emit_error("missing comma in sound");
+                            } else {
+                                get_lex();
+                            }
+                            if (lex != C_COMMA) {
+                                type = evaluate_expression(1, TYPE_16, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D400");
+                                    cpu6502_1op("STY", "$D401");
+                                }
+                            }
+                            if (lex == C_COMMA) {
+                                get_lex();
+                                type = evaluate_expression(1, TYPE_8, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D405");
+                                }
+                            }
+                            if (lex == C_COMMA) {
+                                get_lex();
+                                type = evaluate_expression(1, TYPE_8, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D406");
+                                }
+                            }
+                            break;
+                        case 17:
+                            get_lex();
+                            if (lex != C_COMMA) {
+                                emit_error("missing comma in sound");
+                            } else {
+                                get_lex();
+                            }
+                            if (lex != C_COMMA) {
+                                type = evaluate_expression(1, TYPE_16, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D407");
+                                    cpu6502_1op("STY", "$D408");
+                                }
+                            }
+                            if (lex == C_COMMA) {
+                                get_lex();
+                                type = evaluate_expression(1, TYPE_8, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D409");
+                                }
+                            }
+                            if (lex == C_COMMA) {
+                                get_lex();
+                                type = evaluate_expression(1, TYPE_8, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D40A");
+                                }
+                            }
+                            break;
+                        case 18:
+                            get_lex();
+                            if (lex != C_COMMA) {
+                                emit_error("missing comma in sound");
+                            } else {
+                                get_lex();
+                            }
+                            if (lex != C_COMMA) {
+                                type = evaluate_expression(1, TYPE_16, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D40B");
+                                    cpu6502_1op("STY", "$D40C");
+                                }
+                            }
+                            if (lex == C_COMMA) {
+                                get_lex();
+                                type = evaluate_expression(1, TYPE_8, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D40D");
+                                }
+                            }
+                            if (lex == C_COMMA) {
+                                get_lex();
+                                type = evaluate_expression(1, TYPE_8, 0);
+                                if (machine == C64) {
+                                    cpu6502_1op("STA", "$D40E");
+                                }
+                            }
+                            break;
+                        case 19:
+                            get_lex();
+                            if (lex != C_COMMA) {
+                                emit_error("missing comma in sound");
+                            } else {
+                                get_lex();
+                            }
+                            type = evaluate_expression(1, TYPE_8, 0);
+                            if (machine == C64) {
+                                cpu6502_1op("STA", "$D418");
+                            }
+                            break;
                         default:
                             emit_error("SOUND with unhandled channel number");
                             break;
@@ -6191,7 +6370,7 @@ void compile_statement(int check_for_else)
                         emit_error("BANK ROM used twice");
                         get_lex();
                     } else {
-                        if (machine == SVI || machine == SORD || machine == MEMOTECH || machine == CREATIVISION || machine == EINSTEIN || machine == PV2000) {
+                        if (machine == SVI || machine == SORD || machine == MEMOTECH || machine == CREATIVISION || machine == EINSTEIN || machine == PV2000 || machine == C64) {
                             emit_error("Bank-switching not supported with current platform");
                         } else if (machine == NES && (value == 128 || value == 1024)) {
                             emit_error("NES/Famicom only supports 256 or 512 k ROM size");
@@ -6392,6 +6571,8 @@ void compile_statement(int check_for_else)
                 if (target == CPU_6502) {
                     if (machine == NES) {
                         emit_error("VDP not supported for NES/Famicom");
+                    } else if (machine == C64) {
+                        emit_error("VDP not supported for C64");
                     } else {
                         sprintf(temp, "#%d", vdp_reg);
                         cpu6502_1op("LDX", temp);
@@ -7024,6 +7205,7 @@ int main(int argc, char *argv[])
     fprintf(output, "TI99:\tequ %d\n", (machine == TI994A) ? 1 : 0);
     fprintf(output, "NABU:\tequ %d\n", (machine == NABU) ? 1 : 0);
     fprintf(output, "SMS:\tequ %d\n", (machine == SMS) ? 1 : 0);
+    fprintf(output, "C64:\tequ %d\n", (machine == C64) ? 1 : 0);
     if (machine == NES) {
         if (bank_switching)
             fprintf(output, "NES_PRG_BANKS:\tequ %d\t; Each one 16K.\n", bank_rom_size / 16);
@@ -7069,6 +7251,8 @@ int main(int argc, char *argv[])
         strcat(path, "cvbasic_6502_prologue.asm");
     else if (target == CPU_6502 && machine == NES)
         strcat(path, "cvbasic_nes_prologue.asm");
+    else if (target == CPU_6502 && machine == C64)
+        strcat(path, "cvbasic_c64_prologue.asm");
     else if (target == CPU_9900)
         strcat(path, "cvbasic_9900_prologue.asm");
     else
@@ -7131,6 +7315,8 @@ int main(int argc, char *argv[])
         strcat(path, "cvbasic_6502_epilogue.asm");
     else if (target == CPU_6502 && machine == NES)
         strcat(path, "cvbasic_nes_epilogue.asm");
+    else if (target == CPU_6502 && machine == C64)
+        strcat(path, "cvbasic_c64_epilogue.asm");
     else if (target == CPU_9900)
         strcat(path, "cvbasic_9900_epilogue.asm");
     else
@@ -7185,6 +7371,9 @@ int main(int argc, char *argv[])
         available_bytes = consoles[machine].memory_size + extra_ram;
         if (machine == SORD)    /* Because stack is set apart */
             available_bytes -= (music_used ? 33 : 0) + 146;
+        else if (machine == C64)
+            available_bytes -= 0x200 +                   /* ZP variable usage */
+            (music_used ? 0x100 : 0);  /* Music player requirements */
         else if (machine != COLECOVISION_SGM)
             available_bytes -= 64 +                    /* Stack requirements */
             (music_used ? 33 : 0) +     /* Music player requirements */

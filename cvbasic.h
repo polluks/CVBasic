@@ -35,6 +35,7 @@ enum supported_machine {
     SMS,
     NES,
     MSX2,
+    C64,
     TOTAL_TARGETS
 };
 
