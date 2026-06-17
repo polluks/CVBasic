@@ -3814,10 +3814,13 @@ void compile_statement(int check_for_else)
                 generic_call("cls");
             } else if (strcmp(name, "WAIT") == 0) {
                 get_lex();
-                if (machine == SORD || machine == CREATIVISION || machine == NES || machine == EINSTEIN || machine == TI994A)
+                if (machine == SORD || machine == EINSTEIN || machine == CREATIVISION || machine == NES || machine == TI994A) {
                     generic_call("wait");
-                else
+                } else if (machine == COLECOVISION || machine == COLECOVISION_SGM) {
+                    cpuz80_noop("DB $76+COLECO_SPINNER*$59");   /* HALT or RST $08 */
+                } else {
                     cpuz80_noop("HALT");
+                }
             } else if (strcmp(name, "OUT") == 0) {
                 struct node *port;
                 struct node *value;
@@ -6835,8 +6838,8 @@ int main(int argc, char *argv[])
      ** Extra options.
      */
     extra_ram = 0;
-    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'r' && tolower(argv[c][2] == 'a') &&
-        tolower(argv[c][3] == 'm') && argv[c][4] == '1' && argv[c][5] == '6' &&
+    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'r' && tolower(argv[c][2]) == 'a' &&
+        tolower(argv[c][3]) == 'm' && argv[c][4] == '1' && argv[c][5] == '6' &&
         argv[c][6] == '\0') {
         c++;
         if (machine == MSX || machine == MSX2) {
@@ -6847,8 +6850,8 @@ int main(int argc, char *argv[])
         }
     }
     bank_konami = 0;
-    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'k' && tolower(argv[c][2] == 'o') &&
-        tolower(argv[c][3] == 'n') && tolower(argv[c][4]) == 'a' && tolower(argv[c][5]) == 'm' && tolower(argv[c][6]) == 'i' &&
+    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'k' && tolower(argv[c][2]) == 'o' &&
+        tolower(argv[c][3]) == 'n' && tolower(argv[c][4]) == 'a' && tolower(argv[c][5]) == 'm' && tolower(argv[c][6]) == 'i' &&
         argv[c][7] == '\0') {
         c++;
         if (machine == MSX || machine == MSX2) {
@@ -6861,8 +6864,8 @@ int main(int argc, char *argv[])
     cpm_option = 0;
     if (machine == EINSTEIN)
         cpm_option = 1;     /* Forced */
-    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'c' && tolower(argv[c][2] == 'p') &&
-        tolower(argv[c][3] == 'm') && argv[c][4] == '\0') {
+    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'c' && tolower(argv[c][2]) == 'p' &&
+        tolower(argv[c][3]) == 'm' && argv[c][4] == '\0') {
         c++;
         if (machine == MEMOTECH || machine == NABU) {
             cpm_option = 1;
@@ -6872,8 +6875,8 @@ int main(int argc, char *argv[])
         }
     }
     small_rom = 0;
-    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'r' && tolower(argv[c][2] == 'o') &&
-        tolower(argv[c][3] == 'm') && argv[c][4] == '1' && argv[c][5] == '6' &&
+    if (argv[c][0] == '-' && tolower(argv[c][1]) == 'r' && tolower(argv[c][2]) == 'o' &&
+        tolower(argv[c][3]) == 'm' && argv[c][4] == '1' && argv[c][5] == '6' &&
         argv[c][6] == '\0') {
         c++;
         if (machine == CREATIVISION) {
