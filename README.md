@@ -288,6 +288,8 @@ There are some very good examples of games developed with CVBasic.
 
 * Camelot Knights by nanochess. Available from [https://forums.atariage.com/topic/363252-camelot-knights-game/](https://forums.atariage.com/topic/363252-camelot-knights-game/)
 
+* Chrono Runner for TI/99-4A by Fabrizio Luglio. Source code available from [https://github.com/fablug-wq/chrono-runner-ti99](https://github.com/fablug-wq/chrono-runner-ti99) and playable online at [https://ti994a.altervista.org/emul2026/ChronoRunner.php](https://ti994a.altervista.org/emul2026/ChronoRunner.php)
+ 
 * Colecovania demo by Skywaffle. Video at [https://www.youtube.com/watch?v=ixlAEZ0GSis&ab_channel=MatthewKiehl](https://www.youtube.com/watch?v=ixlAEZ0GSis&ab_channel=MatthewKiehl)
 
 * Crackpots by Eric Damain. Available from [https://forums.atariage.com/topic/388119-crackpots/](https://forums.atariage.com/topic/388119-crackpots/)
