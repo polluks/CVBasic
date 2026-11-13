@@ -1,4 +1,4 @@
-# CVBasic compiler v0.9.2
+# CVBasic compiler v0.9.3
 *(c) Copyright 2024-2026 Óscar Toledo Gutiérrez*
 *https://nanochess.org/*
 
@@ -17,6 +17,7 @@ CVBasic is a BASIC language cross-compiler with a syntax alike to QBasic. It sup
 * Hanimex/Soundic Pencil II.
 * NABU PC.
 * Sega Master System (supporting bank switching with Sega mapper)
+* Sega Game Gear (supporting bank switching with Sega mapper)
 * NES/Famicom (supporting bank switching using mapper 30 - UNROM 512)
 
 The CVBasic compiler can create programs up to 1 MB using the BANK statements (using 16K bank switching on most platforms, 8k on TI-99/4A). 
@@ -25,7 +26,7 @@ One of the advantages of using CVBasic is that all the programs can be compiled 
 
 Porting to MSX2 is relatively easy. You only need to use MODE 4 for enabling the extended video mode, and create 16-byte color tables for sprites, and use these with DEFINE SPRITE COLOR.
 
-Currently, Sega Master System and NES/Famicom are the most different in video terms, although the compiler shares the core, the sprites are 8x16 and each pixel can have a different color, so the games aren't directly portable, but very easily translated. The examples include SMS and NES/Famicom versions for every game so you can see the required changes.
+Currently, Sega Master System, Sega Game Gear and NES/Famicom are the most different in video terms, although the compiler shares the core, the sprites are 8x16 and each pixel can have a different color, so the games aren't directly portable, but very easily translated. The examples include SMS and NES/Famicom versions for every game so you can see the required changes.
 
 The following files compose the compiler:
 
@@ -74,6 +75,7 @@ The following files compose the compiler:
     examples/happy_face.bas     Bouncing face.
     examples/happy_face_nes.bas Bouncing face (NES/Famicom).
     examples/happy_face_sms.bas Bouncing face (Sega Master System).
+    examples/hello_world.bas    Hello World example.
     examples/music.bas          Music example.
     examples/oscar_compressed.bas  High-resolution graphics example compressed with Pletter.
     examples/oscar_compressed_sms.bas  High-resolution graphics example compressed with Pletter (Sega Master System)
@@ -223,6 +225,13 @@ Using CVBasic to compile a Sega Master System program:
     
 The -sms option of gasm80 will generate automatically a valid checksum so the game can run on a real console.
 
+Using CVBasic to compile a Sega Game Gear program:
+
+    cvbasic --gamegear game.bas game.asm
+    gasm80 game.asm -o game.gg -sms
+    
+The -sms option of gasm80 will generate automatically a valid checksum so the game can run on a real console.
+
 Using CVBasic to compile a NES/Famicom program:
 
     cvbasic --nes game.bas game.asm
@@ -231,7 +240,7 @@ Using CVBasic to compile a NES/Famicom program:
 
 ### Notes
 
-The current official version is v0.9.0.
+The current official version is v0.9.2.
 
 All platforms have been tested in emulation.
 

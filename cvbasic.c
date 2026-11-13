@@ -102,6 +102,9 @@ struct console consoles[TOTAL_TARGETS] = {
     {"sms",     "",         "Sega Master System (8K RAM)",
         "Sega Master System", "SMS",
         0xc000, 0xdff0, 0x1ff0,  0xbe,   0xbe, 0x7f, 1, CPU_Z80},
+    {"gamegear","",         "Sega Game Gear (8K RAM)",
+        "Sega Game Gear", "GAMEGEAR",
+        0xc000, 0xdff0, 0x1ff0,  0xbe,   0xbe, 0x7f, 1, CPU_Z80},
     {"nes",     "",         "NES/Famicom (2K RAM)",
         "NES/Famicom", "NES",
         0x0050, 0x01ff, 0x0800,  0,      0,    0,    1, CPU_6502},
@@ -109,6 +112,11 @@ struct console consoles[TOTAL_TARGETS] = {
         "MSX2", "MSX2",
         0xe000, 0xf380, 0x1380,  0x98,   0x98, 0,    1, CPU_Z80},
 };
+
+/*
+ ** Modules used by the compilation.
+ */
+struct modules module;
 
 static int err_code;
 
@@ -123,6 +131,7 @@ static int bank_switching;
 static int bank_rom_size;
 static int bank_current;
 static int bank_konami;
+static int game_gear;           /* Suboption for SMS */
 
 static char current_file[MAX_LINE_SIZE];
 static int current_line;
@@ -4065,6 +4074,8 @@ void compile_statement(int check_for_else)
                             size = 1;
                         if (size > 5)
                             size = 5;
+                        module.print_number = 1;
+                        module.print_char = 1;  /* Dependance */
                         type = evaluate_expression(1, TYPE_16, 0);
                         if (target == CPU_6502) {
                             if (format == 0) {
@@ -4149,10 +4160,13 @@ void compile_statement(int check_for_else)
                                 cpu9900_2op("mov", "r0", "r2");
                                 cpu9900_1op("swpb", "r2");
                             }
+                            module.print_char = 1;
                             generic_interrupt_disable();
                             generic_call("print_char");
                             generic_interrupt_enable();
                         } else {
+                            module.print_number = 1;
+                            module.print_char = 1;  /* Dependance */
                             type = evaluate_expression(1, TYPE_16, 0);
                             if (target == CPU_9900)
                                 cpu9900_2op("mov", "r0", "r3");
@@ -4347,6 +4361,7 @@ void compile_statement(int check_for_else)
                                 }
                                 get_lex();
                             }
+                            module.define_sprite = 1;
                             generic_call("define_sprite");
                             node_delete(length);
                             node_delete(source);
@@ -4435,6 +4450,10 @@ void compile_statement(int check_for_else)
                         generic_call(color ? "define_color_unpack" : "define_char_unpack");
                         compression_used = 1;
                     } else {
+                        if (color)
+                            module.define_color = 1;
+                        else
+                            module.define_char = 1;
                         generic_call(color ? "define_color" : "define_char");
                     }
                     node_delete(length);
@@ -4692,6 +4711,7 @@ void compile_statement(int check_for_else)
                                 cpu6502_noop("PLA");
                             }
                         }
+                        module.update_sprite = 1;
                         generic_call("update_sprite");
                     }
                 }
@@ -5067,7 +5087,7 @@ void compile_statement(int check_for_else)
                 
                 get_lex();
                 if (machine != SMS && machine != NES && machine != MSX && machine != MSX2)
-                    emit_error("PALETTE is only available on SMS/NES/Famicom/MSX/MSX2");
+                    emit_error("PALETTE is only available on SMS/GG/NES/Famicom/MSX/MSX2");
                 if (lex == C_NAME && strcmp(name, "LOAD") == 0) {
                     get_lex();
                     if (lex != C_NAME) {
@@ -5103,12 +5123,14 @@ void compile_statement(int check_for_else)
                 } else if (lex == C_NAME && strcmp(name, "DEFAULT") == 0) {
                     get_lex();
                     if (machine != MSX2 && machine != SMS && machine != MSX)
-                        emit_error("PALETTE DEFAULT is only available in MSX2/SMS");
+                        emit_error("PALETTE DEFAULT is only available in MSX2/SMS/GG");
                     generic_call("palette_default");
                 } else {
                     type = evaluate_expression(1, TYPE_8, 0);
                     if (machine == SMS) {
                         generic_interrupt_disable();
+                        if (game_gear == 1) /* Palette entries are 2 bytes */
+                            cpuz80_2op("ADD", "A", "A");
                         cpuz80_2op("LD", "L", "A");
                         cpuz80_2op("LD", "H", "$C0");
                         cpuz80_1op("CALL", "SETWRT");
@@ -5132,9 +5154,16 @@ void compile_statement(int check_for_else)
                         emit_error("missing comma in PALETTE");
                     else
                         get_lex();
-                    type = evaluate_expression(1, ((machine == MSX2 || machine == MSX) ? TYPE_16 : TYPE_8), 0);
+                    type = evaluate_expression(1, ((machine == MSX2 || machine == MSX || (machine == SMS && game_gear != 0)) ? TYPE_16 : TYPE_8), 0);
                     if (machine == SMS) {
-                        cpuz80_2op("OUT", "(VDP)", "A");
+                        if (game_gear) {
+                            cpuz80_2op("LD", "A", "L");
+                            cpuz80_2op("OUT", "(VDP)", "A");
+                            cpuz80_2op("LD", "A", "H");
+                            cpuz80_2op("OUT", "(VDP)", "A");
+                        } else {
+                            cpuz80_2op("OUT", "(VDP)", "A");
+                        }
                         generic_interrupt_enable();
                     } else if (machine == NES) {
                         cpu6502_1op("LDX", "ppu_pointer");
@@ -5267,11 +5296,13 @@ void compile_statement(int check_for_else)
                     if (machine == SMS)
                         emit_warning("MODE 1 isn't upward compatible with Sega Genesis/Mega Drive");
                     generic_call("mode_1");
+                    module.mode_1 = 1;
                 }
                 if (value == 2) {
                     if (machine == SMS)
                         emit_warning("MODE 2 isn't upward compatible with Sega Genesis/Mega Drive");
                     generic_call("mode_2");
+                    module.mode_2 = 1;
                 }
                 if (value == 4) {
                     if (machine != SMS && machine != MSX2)
@@ -5447,6 +5478,7 @@ void compile_statement(int check_for_else)
                             cpu6502_noop("PLA");
                             cpu6502_1op("STA","temp");
                         }   /* 9900 already covered */
+                        module.cpyblk = 1;
                         generic_call("CPYBLK");
                     } else {
                         if (target == CPU_6502) {
@@ -5779,6 +5811,7 @@ void compile_statement(int check_for_else)
                     switch (value) {
                         /* Sound handling for SN76489 */
                         case 0:
+                            module.sn76489 = 1;
                             get_lex();
                             if (lex != C_COMMA) {
                                 emit_error("missing comma in sound");
@@ -5810,6 +5843,7 @@ void compile_statement(int check_for_else)
                             }
                             break;
                         case 1:
+                            module.sn76489 = 1;
                             get_lex();
                             if (lex != C_COMMA) {
                                 emit_error("missing comma in sound");
@@ -5841,6 +5875,7 @@ void compile_statement(int check_for_else)
                             }
                             break;
                         case 2:
+                            module.sn76489 = 1;
                             get_lex();
                             if (lex != C_COMMA) {
                                 emit_error("missing comma in sound");
@@ -5872,6 +5907,7 @@ void compile_statement(int check_for_else)
                             }
                             break;
                         case 3:
+                            module.sn76489 = 1;
                             get_lex();
                             if (lex != C_COMMA) {
                                 emit_error("missing comma in sound");
@@ -6963,6 +6999,16 @@ int main(int argc, char *argv[])
     } else {
         pencil = 0;
     }
+    
+    /* Convert Game Gear into a SMS */
+    if (machine == GAMEGEAR) {
+        machine = SMS;
+        target = CPU_Z80;
+        game_gear = 1;
+    } else {
+        game_gear = 0;
+        
+    }
     bytes_used = 0;
 
     bank_konami = 0;
@@ -7077,6 +7123,8 @@ int main(int argc, char *argv[])
     chrrom_data = NULL;   /* Only NES */
     nes_nametable = 0;  /* Only NES */
 
+    memset(&module, 0, sizeof(module)); /* No modules used, yet */
+    
     compile_basic();
     if (loops != NULL)
         emit_error("End of source with control block still open");
@@ -7159,6 +7207,7 @@ int main(int argc, char *argv[])
     fprintf(output, "TI99:\tequ %d\n", (machine == TI994A) ? 1 : 0);
     fprintf(output, "NABU:\tequ %d\n", (machine == NABU) ? 1 : 0);
     fprintf(output, "SMS:\tequ %d\n", (machine == SMS) ? 1 : 0);
+    fprintf(output, "GAMEGEAR:\tequ %d\n", (game_gear == 1) ? 1 : 0);
     if (machine == NES) {
         if (bank_switching)
             fprintf(output, "NES_PRG_BANKS:\tequ %d\t; Each one 16K.\n", bank_rom_size / 16);
@@ -7188,6 +7237,25 @@ int main(int argc, char *argv[])
     if (machine == CREATIVISION) {
         fprintf(output, "SMALL_ROM:\tequ %d\n", small_rom);
     }
+    
+    fprintf(output, "\t; Used modules.\n");
+    fprintf(output, "MODULE_SN76489:\tequ %d\n", module.sn76489);
+    fprintf(output, "MODULE_KEYPAD:\tequ %d\n", module.keypad);
+    fprintf(output, "MODULE_MUL16:\tequ %d\n", module._mul16);
+    fprintf(output, "MODULE_DIV16:\tequ %d\n", module._div16);
+    fprintf(output, "MODULE_DIV16S:\tequ %d\n", module._div16s);
+    fprintf(output, "MODULE_MOD16S:\tequ %d\n", module._mod16s);
+    fprintf(output, "MODULE_SGN16:\tequ %d\n", module._sgn16);
+    fprintf(output, "MODULE_RANDOM:\tequ %d\n", module.random);
+    fprintf(output, "MODULE_MODE_1:\tequ %d\n", module.mode_1);
+    fprintf(output, "MODULE_MODE_2:\tequ %d\n", module.mode_2);
+    fprintf(output, "MODULE_PRINT_NUMBER:\tequ %d\n", module.print_number);
+    fprintf(output, "MODULE_PRINT_CHAR:\tequ %d\n", module.print_char);
+    fprintf(output, "MODULE_CPYBLK:\tequ %d\n", module.cpyblk);
+    fprintf(output, "MODULE_DEFINE_CHAR:\tequ %d\n", module.define_char);
+    fprintf(output, "MODULE_DEFINE_COLOR:\tequ %d\n", module.define_color);
+    fprintf(output, "MODULE_DEFINE_SPRITE:\tequ %d\n", module.define_sprite);
+    fprintf(output, "MODULE_UPDATE_SPRITE:\tequ %d\n", module.update_sprite);
 
     fprintf(output, "\n");
     if (bank_switching) {
